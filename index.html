@@ -1,0 +1,67 @@
+HTML
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ESP32 サーボコントローラー</title>
+    <style>
+        body { font-family: Arial, sans-serif; text-align: center; marginTop: 50px; }
+        button { font-size: 18px; padding: 15px 30px; margin: 10px; cursor: pointer; }
+        .open-btn { background-color: #4CAF50; color: white; border: none; }
+        .close-btn { background-color: #f44336; color: white; border: none; }
+        .connect-btn { background-color: #008CBA; color: white; border: none; }
+    </style>
+</head>
+<body>
+
+    <h1>ESP32 Bluetooth コントローラー</h1>
+    
+    <button class="connect-btn" onclick="connectBLE()">1. ESP32に接続する</button>
+    <br><br>
+    <button class="open-btn" onclick="sendCommand('OPEN')">開く (90度)</button>
+    <button class="close-btn" onclick="sendCommand('CLOSE')">閉じる (0度)</button>
+
+    <p id="status">ステータス: 未接続</p>
+
+    <script>
+        const SERVICE_UUID = "4fa2c730-18ed-46c0-bc2f-e090df3a6773";
+        const CHARACTERISTIC_UUID = "beb5483e-36e1-4688-b7f5-ea07361b26a8";
+        let bluetoothCharacteristic = null;
+
+        async function connectBLE() {
+            document.getElementById("status").innerText = "接続中...";
+            try {
+                const device = await navigator.bluetooth.requestDevice({
+                    filters: [{ name: 'ESP32_Servo_Controller' }],
+                    optionalServices: [SERVICE_UUID]
+                });
+
+                const server = await device.gatt.connect();
+                const service = await server.getPrimaryService(SERVICE_UUID);
+                bluetoothCharacteristic = await service.getCharacteristic(CHARACTERISTIC_UUID);
+                
+                document.getElementById("status").innerText = "ステータス: 接続完了！";
+            } catch (error) {
+                console.log(error);
+                document.getElementById("status").innerText = "接続失敗: " + error;
+            }
+        }
+
+        async function sendCommand(command) {
+            if (!bluetoothCharacteristic) {
+                alert("先にESP32と接続してください。");
+                return;
+            }
+            try {
+                const encoder = new TextEncoder();
+                await bluetoothCharacteristic.writeValue(encoder.encode(command));
+                console.log("送信成功: " + command);
+            } catch (error) {
+                console.log(error);
+                alert("送信失敗: " + error);
+            }
+        }
+    </script>
+</body>
+</html>
