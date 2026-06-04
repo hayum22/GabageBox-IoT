@@ -3,41 +3,88 @@
 <head>
   <meta charset="utf-8">
   <title>Smart Trash Box</title>
+  <style>
+    body { font-family: sans-serif; text-align: center; margin-top: 50px; }
+    button { font-size: 1.2em; margin: 10px; padding: 10px 20px; }
+    #status { margin-top: 20px; font-size: 1.1em; }
+  </style>
 </head>
 <body>
 <h1>スマートゴミ箱</h1>
+
 <button id="openBtn">開く</button>
 <button id="closeBtn">閉じる</button>
+
+<div id="status">
+  <p>接続状態: <span id="conn">未接続</span></p>
+  <p>開閉回数: <span id="count">0</span> 回</p>
+</div>
 
 <script>
 let device;
 let characteristic;
 
+const SERVICE_UUID = '12345678-1234-1234-1234-1234567890ab';
+const CHAR_UUID = 'abcd1234-5678-1234-5678-abcdef123456';
+
+// 接続関数
 async function connect() {
-  device = await navigator.bluetooth.requestDevice({
-    filters: [{ name: 'SmartTrashBox' }],
-    optionalServices: ['12345678-1234-1234-1234-1234567890ab']
-  });
-  
-  const server = await device.gatt.connect();
-  const service = await server.getPrimaryService('12345678-1234-1234-1234-1234567890ab');
-  characteristic = await service.getCharacteristic('abcd1234-5678-1234-5678-abcdef123456');
+  try {
+    device = await navigator.bluetooth.requestDevice({
+      filters: [{ name: 'SmartTrashBox' }],
+      optionalServices: [SERVICE_UUID]
+    });
+
+    const server = await device.gatt.connect();
+    const service = await server.getPrimaryService(SERVICE_UUID);
+    characteristic = await service.getCharacteristic(CHAR_UUID);
+
+    document.getElementById('conn').textContent = '接続済み';
+
+    // 初回読み込み：回数を取得して表示
+    readCount();
+
+    device.addEventListener('gattserverdisconnected', () => {
+      document.getElementById('conn').textContent = '切断';
+      characteristic = null;
+    });
+
+    console.log("接続成功");
+  } catch (e) {
+    console.error(e);
+    alert('BLE接続に失敗しました');
+  }
 }
 
+// コマンド送信
 async function sendCommand(cmd) {
+  if (!characteristic) {
+    await connect();
+  }
   const encoder = new TextEncoder();
   await characteristic.writeValue(encoder.encode(cmd));
+
+  // コマンド送信後に開閉回数を取得
+  setTimeout(readCount, 200); // 少し待ってから取得
 }
 
-document.getElementById('openBtn').onclick = async () => {
-  if(!characteristic) await connect();
-  sendCommand('OPEN');
-};
+// 開閉回数読み取り
+async function readCount() {
+  if (!characteristic) return;
+  try {
+    const value = await characteristic.readValue();
+    const decoder = new TextDecoder();
+    const str = decoder.decode(value);
+    const count = parseInt(str) || 0;
+    document.getElementById('count').textContent = count;
+  } catch (e) {
+    console.error("回数読み取りエラー:", e);
+  }
+}
 
-document.getElementById('closeBtn').onclick = async () => {
-  if(!characteristic) await connect();
-  sendCommand('CLOSE');
-};
+// ボタンイベント
+document.getElementById('openBtn').onclick = () => sendCommand('OPEN');
+document.getElementById('closeBtn').onclick = () => sendCommand('CLOSE');
 </script>
 </body>
 </html>
