@@ -1,92 +1,785 @@
 <!DOCTYPE html>
-<html>
+<html lang="ja">
 <head>
-  <meta charset="utf-8">
-  <title>Smart Trash Box</title>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ULTRA AUTOMATIC SMART BIN</title>
+  <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@500;700;900&family=M+PLUS+Rounded+1c:wght@700;900&family=Space+Mono:wght@700&display=swap" rel="stylesheet">
   <style>
-    body { font-family: sans-serif; text-align: center; margin-top: 50px; }
-    button { font-size: 1.2em; margin: 10px; padding: 10px 20px; }
-    #status { margin-top: 20px; font-size: 1.1em; }
-    #connectBtn { background: #4CAF50; color: white; border: none; border-radius: 8px; cursor: pointer; }
-    #connectBtn:disabled { background: #aaa; }
+    :root {
+      --bg-dark: #0a0f1d;
+      --bg-deep: #070a14;
+      --panel: rgba(13, 25, 47, 0.75); 
+      --panel-border: rgba(0, 240, 181, 0.3);
+      --border: #00f0b5;
+      --accent: #ff5e97; 
+      --neon-blue: #00b4d8;
+      --text: #e2e8f0; 
+      --text-muted: #64748b;
+      --system-status: #00f0b5;
+    }
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    
+    body {
+      background: radial-gradient(circle at 50% 50%, var(--bg-dark) 0%, var(--bg-deep) 100%);
+      color: var(--text);
+      font-family: 'Orbitron', 'M PLUS Rounded 1c', sans-serif;
+      font-weight: 700;
+      min-height: 100vh; display: flex; flex-direction: column;
+      align-items: center; justify-content: flex-start;
+      overflow-x: hidden;
+      padding: 80px 16px 40px;
+      position: relative;
+    }
+    
+    body.shake-screen { animation: screenShake 0.4s cubic-bezier(.36,.07,.19,.97) both; }
+
+    .bg-grid {
+      position: fixed; inset: 0;
+      background-image: 
+        linear-gradient(rgba(0, 240, 181, 0.07) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(0, 240, 181, 0.07) 1px, transparent 1px);
+      background-size: 50px 50px;
+      transform: perspective(400px) rotateX(65deg) translateY(-80px);
+      transform-origin: top center;
+      opacity: 0.7; pointer-events: none; z-index: 0;
+      animation: gridScroll 12s linear infinite;
+    }
+    @keyframes gridScroll { from { background-position: 0 0; } to { background-position: 0 400px; } }
+    
+    #date-display {
+      position: absolute; top: 20px; right: 20px;
+      font-family: 'Space Mono', monospace; font-size: 0.85rem;
+      color: var(--border); background: rgba(7, 10, 20, 0.8); border: 2px solid var(--border);
+      padding: 6px 16px; border-radius: 4px; z-index: 10;
+      box-shadow: 0 0 10px rgba(0, 240, 181, 0.3);
+      letter-spacing: 0.05em;
+    }
+    
+    .container {
+      position: relative; z-index: 1; display: flex; flex-direction: column;
+      align-items: center; gap: 24px; width: 100%; max-width: 500px;
+    }
+    
+    .header-area { text-align: center; width: 100%; }
+    .title { font-size: 0.75rem; letter-spacing: 0.4em; color: var(--accent); font-weight: 900; margin-bottom: 4px; text-shadow: 0 0 8px var(--accent); }
+    .sub-title { font-size: 1.6rem; font-weight: 900; color: #fff; letter-spacing: 0.05em; text-shadow: 0 0 12px rgba(0, 240, 181, 0.6), 0 0 20px rgba(0, 240, 181, 0.2); }
+
+    .trash-scene {
+      position: relative;
+      width: 100%; height: 280px;
+      background: rgba(10, 20, 40, 0.6);
+      border-radius: 16px; border: 2px solid var(--panel-border);
+      box-shadow: inset 0 0 30px rgba(0,240,181,0.1), 0 8px 32px rgba(0,0,0,0.5);
+      backdrop-filter: blur(8px);
+      overflow: hidden;
+    }
+
+    .neon-ring {
+      position: absolute; border-radius: 50%;
+      border: 2px dashed var(--system-status); opacity: 0.4;
+      top: 50%; left: 50%; transform: translate(-50%,-50%);
+      pointer-events: none; width: 220px; height: 220px;
+      box-shadow: inset 0 0 15px var(--system-status), 0 0 15px var(--system-status);
+      animation: spinRing 25s linear infinite; transition: border-color 0.3s, box-shadow 0.3s;
+    }
+    @keyframes spinRing { from{transform:translate(-50%,-50%) rotate(0deg)} to{transform:translate(-50%,-50%) rotate(360deg)} }
+
+    #physicsCanvas {
+      position: absolute; inset: 0; z-index: 2; pointer-events: none;
+    }
+
+    .trash-can {
+      position: absolute; bottom: 20px; left: calc(50% - 60px);
+      width: 120px; height: 120px; z-index: 4;
+    }
+    .trash-can.shake-can { animation: canShock 0.3s ease-in-out; }
+    @keyframes canShock {
+      0%, 100% { transform: scale(1); }
+      30% { transform: scale(1.15, 0.85); }
+      60% { transform: scale(0.9, 1.1) translateY(-10px); }
+    }
+
+    .trash-lid {
+      position: absolute; bottom: 112px; left: -4px;
+      width: 128px; height: 16px;
+      background: linear-gradient(135deg, var(--neon-blue), #0077b6);
+      border: 2px solid var(--border); border-radius: 4px;
+      transform-origin: left center;
+      transition: transform 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275); z-index: 6;
+      box-shadow: 0 0 8px rgba(0, 180, 216, 0.6);
+    }
+    .trash-lid::before {
+      content: ''; position: absolute; top: -6px; left: 44px;
+      width: 36px; height: 6px; background: var(--border); border: 2px solid var(--border); border-radius: 2px 2px 0 0;
+      box-shadow: 0 0 6px var(--border);
+    }
+    .trash-lid.open { transform: rotate(-75deg) translateY(2px); }
+
+    .trash-body {
+      position: absolute; bottom: 0; width: 100%; height: 112px;
+      background: rgba(15, 32, 67, 0.8); border: 2px solid var(--border);
+      border-radius: 6px 6px 16px 16px; overflow: hidden; z-index: 3;
+      box-shadow: 0 0 15px rgba(0, 240, 181, 0.2);
+    }
+    .trash-fill {
+      position: absolute; bottom: 0; left: 0; width: 100%; height: 0%;
+      background: linear-gradient(180deg, rgba(0, 240, 181, 0.6) 0%, rgba(0, 180, 216, 0.2) 100%);
+      transition: height 0.35s cubic-bezier(0.175, 0.885, 0.32, 1.1);
+    }
+
+    .can-eyes {
+      position: absolute; top: 30px; left: 0; width: 100%;
+      display: flex; justify-content: center; gap: 20px; z-index: 5;
+    }
+    .eye {
+      width: 14px; height: 4px; background: var(--neon-blue); border-radius: 2px;
+      margin-top: 6px; box-shadow: 0 0 8px var(--neon-blue);
+      transition: all 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.3);
+    }
+    .is-open .eye { height: 14px; border-radius: 50%; margin-top: 0; background: var(--border); box-shadow: 0 0 10px var(--border); }
+    .is-warn .eye { height: 6px; background: #ffd166; box-shadow: 0 0 8px #ffd166; }
+    .is-danger .can-eyes { animation: eyePanic 0.1s infinite alternate; }
+    .is-danger .eye { height: 14px; width: 14px; border-radius: 50%; background: var(--accent); box-shadow: 0 0 12px var(--accent); }
+    .is-danger .eye::before {
+      content: '×'; position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; color: #000; font-size: 11px; font-weight: 900;
+    }
+    @keyframes eyePanic { from{transform:translate(2px,1px)} to{transform:translate(-2px,-1px)} }
+
+    .trash-items-layer { position: absolute; bottom: 0; left: 0; width: 100%; height: 100%; z-index: 1; opacity: 0.8; }
+    .inner-emoji { position: absolute; font-size: 1.4rem; animation: dropIn 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.2) forwards; }
+    @keyframes dropIn { from{transform:translateY(-30px) scale(0.5); opacity:0;} to{transform:translateY(0) scale(1); opacity:1;} }
+
+    .fill-bar-wrap { width:100%; background:var(--panel); border:2px solid var(--panel-border); border-radius:12px; padding:14px 18px; backdrop-filter: blur(8px); }
+    .fill-bar-header { display:flex; justify-content:space-between; align-items:center; margin-bottom:8px; }
+    .fill-bar-label { font-size:0.8rem; font-weight: 700; color: var(--text-muted); letter-spacing: 0.05em; }
+    .fill-bar-pct { font-family:'Space Mono',monospace; font-size:1.2rem; font-weight:900; color:#00f0b5; text-shadow: 0 0 8px rgba(0,240,181,0.5); }
+    .fill-bar-pct.danger { color:var(--accent); text-shadow: 0 0 8px var(--accent); } 
+    .fill-bar-pct.warn { color:#ffd166; text-shadow: 0 0 8px #ffd166; }
+    .fill-bar-track { width:100%; height:12px; background:rgba(0,0,0,0.4); border-radius:99px; overflow:hidden; border:1px solid rgba(255,255,255,0.1); position: relative; }
+    .fill-bar-inner { height:100%; width:0%; background:linear-gradient(90deg, #00f0b5, #4cd3ff); border-radius:99px; box-shadow: 0 0 8px #00f0b5; transition:width .3s cubic-bezier(0.175, 0.885, 0.32, 1.1); }
+    .fill-bar-inner.warn { background:linear-gradient(90deg, #ffd166, #ff9f43); box-shadow: 0 0 8px #ffd166; }
+    .fill-bar-inner.danger { background:linear-gradient(90deg, var(--accent), #ff1f5a); box-shadow: 0 0 8px var(--accent); }
+
+    .buttons { display:flex; flex-direction:column; gap:14px; width:100%; }
+    .btn-row { display:flex; gap:14px; width:100%; }
+    
+    .btn {
+      position:relative; padding:14px 18px; background:var(--panel); border:2px solid var(--panel-border);
+      border-radius:10px; color:var(--text); font-family: 'Orbitron', 'M PLUS Rounded 1c', sans-serif; font-size:0.95rem; font-weight:700; cursor:pointer; 
+      display:flex; align-items:center; justify-content:space-between;
+      backdrop-filter: blur(8px);
+      transition: all 0.15s ease, background .2s; overflow:hidden; user-select:none; width:100%;
+    }
+    .btn:active { transform:scale(0.98); opacity: 0.9; } 
+    .btn:hover:not(:disabled) { background: rgba(20, 38, 70, 0.8); border-color: rgba(0, 240, 181, 0.6); }
+    
+    .inline-counter {
+      display: flex; align-items: center; gap: 4px;
+      background: rgba(0,0,0,0.4); padding: 4px 14px; border-radius: 4px; border: 1px solid rgba(255,255,255,0.1);
+    }
+    .inline-count-val { font-family: 'Space Mono', monospace; font-size: 1.2rem; font-weight: 900; color: var(--border); text-shadow: 0 0 6px var(--border); transition: transform 0.2s cubic-bezier(0.175, 0.885, 0.32, 1.6); }
+    .inline-count-val.bump { transform: scale(1.3) rotate(-8deg); color: var(--accent); text-shadow: 0 0 6px var(--accent); }
+    .inline-count-unit { font-size: 0.7rem; color: var(--text-muted); }
+
+    .check-mark-area {
+      min-width: 24px; height: 24px; display: flex; align-items: center; justify-content: center;
+      font-size: 1.1rem; color: var(--border); text-shadow: 0 0 8px var(--border); font-family: 'Space Mono', monospace;
+    }
+
+    /* ---- BLE接続状態インジケーター ---- */
+    .ble-status-dot {
+      width: 8px; height: 8px; border-radius: 50%;
+      background: var(--text-muted);
+      box-shadow: none;
+      transition: background 0.3s, box-shadow 0.3s;
+      display: inline-block; margin-right: 6px;
+      flex-shrink: 0;
+    }
+    .ble-status-dot.connected {
+      background: var(--border);
+      box-shadow: 0 0 6px var(--border);
+      animation: blePulse 1.5s ease-in-out infinite;
+    }
+    @keyframes blePulse {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.4; }
+    }
+
+    .btn-connect { border-color: rgba(0, 240, 181, 0.4); }
+    .btn-connect:hover:not(:disabled) { border-color: var(--border); box-shadow: 0 0 10px rgba(0, 240, 181, 0.2); }
+    .btn-connect:disabled { opacity: 0.5; cursor: not-allowed; }
+    
+    .btn-disconnect { width: 140px; flex-shrink: 0; justify-content: center; border-color: rgba(255, 94, 151, 0.3); }
+    .btn-disconnect:hover:not(:disabled) { border-color: var(--accent); box-shadow: 0 0 10px rgba(255, 94, 151, 0.2); }
+    .btn-disconnect:disabled { opacity: 0.25; cursor: not-allowed; }
+    .btn-disconnect .disconnect-label { font-size: 0.85rem; color: #ff5e97; }
+
+    .btn-trash .status-dot { width:10px; height:10px; border-radius:50%; background:var(--accent); box-shadow: 0 0 6px var(--accent); display: inline-block; margin-right: 6px; }
+    .btn-trash.is-open-btn .status-dot { background:var(--border); box-shadow: 0 0 6px var(--border); }
+    .btn-trash .status-text { font-size:0.75rem; color:#000; background: var(--border); padding: 2px 8px; border-radius: 4px; font-weight: 900; box-shadow: 0 0 6px var(--border); }
+    .btn-trash.is-open-btn .status-text { background: var(--border); }
+    /* BLE未接続時はトグルボタンをdisabled風に */
+    .btn-trash:disabled { opacity: 0.3; cursor: not-allowed; }
+    
+    .btn-add { border-color: rgba(0, 180, 216, 0.4); }
+    .btn-add:hover:not(:disabled) { border-color: var(--neon-blue); }
+    .btn-add:disabled { opacity: 0.25; cursor: not-allowed; background: rgba(13, 25, 47, 0.3); border-color: rgba(255,255,255,0.05); color: var(--text-muted); }
+    .btn-add:disabled .inline-counter { opacity: 0.5; }
+
+    .btn-empty { width: 120px; flex-shrink: 0; justify-content: center; border-color: rgba(255, 94, 151, 0.3); }
+    .btn-empty:hover { border-color: var(--accent); }
+    .btn-empty .empty-label { display:flex; flex-direction:column; align-items:center; font-size:0.75rem; color:var(--accent); }
+    .btn-empty .empty-icon { font-size:1.1rem; transition: transform 0.2s; margin-bottom: 2px; }
+    .btn-empty:hover .empty-icon { transform: scale(1.2) rotate(-20deg); }
+
+    .log { width:100%; background:var(--panel); border:2px solid var(--panel-border); border-radius:12px; overflow:hidden; backdrop-filter: blur(8px); }
+    .log-header { padding:10px 18px; border-bottom:1px solid rgba(255,255,255,0.08); font-size:0.75rem; background: rgba(0,0,0,0.2); color: var(--text-muted); letter-spacing: 0.1em; }
+    .log-entries { padding:12px 18px; display:flex; flex-direction:column; gap:6px; max-height:100px; overflow-y:auto; min-height:60px; font-family: 'Space Mono', monospace; }
+    .log-entry { font-size:0.75rem; display:flex; gap:10px; animation:logIn .2s ease; line-height: 1.4; }
+    .log-entry .log-time { color: var(--text-muted); }
+    
+    .open-action { color:#00f0b5; } .close-action { color:#64748b; }
+    .add-action { color:var(--neon-blue); } .empty-action { color:#ff9f43; } 
+    .spill-action { color:var(--accent); font-weight: 900; animation: txtPulse 0.3s infinite alternate; }
+    .connect-action { color:#00f0b5; text-shadow: 0 0 4px rgba(0,240,181,0.4); }
+    .disconnect-action { color:var(--accent); text-shadow: 0 0 4px rgba(255,94,151,0.4); }
+    .ble-error-action { color:#ffd166; }
+    .log-empty { font-size:0.75rem; color:var(--text-muted); text-align: center; width: 100%; padding-top: 8px; }
+    
+    @keyframes logIn { from{opacity:0;transform:translateY(-4px)} to{opacity:1;transform:translateY(0)} }
+    @keyframes txtPulse { from{transform:scale(1)} to{transform:scale(1.02)} }
+
+    .rubber { animation: rubEf 0.5s ease; }
+    @keyframes rubEf {
+      0% { transform: scale(1); }
+      30% { transform: scaleX(1.15) scaleY(0.85); }
+      40% { transform: scaleX(0.85) scaleY(1.15); }
+      50% { transform: scaleX(1.05) scaleY(0.95); }
+      100% { transform: scale(1); }
+    }
+
+    @keyframes screenShake {
+      10%, 90% { transform: translate3d(-2px, 0, 0); }
+      20%, 80% { transform: translate3d(3px, 0, 0); }
+      30%, 50%, 70% { transform: translate3d(-4px, 0, 0); }
+      40%, 60% { transform: translate3d(4px, 0, 0); }
+    }
   </style>
 </head>
 <body>
-<h1>スマートゴミ箱</h1>
+  <div class="bg-grid"></div>
+  <div id="date-display">LOCAL TIME // 0000.00.00</div>
+  
+  <div class="container">
+    <div class="header-area">
+      <div class="title">⚡ AUTOMATED HARDWARE SIMULATION ⚡</div>
+      <div class="sub-title">ULTRA AUTOMATIC SMART BIN</div>
+    </div>
 
-<!-- ✅ 明示的な接続ボタンを追加 -->
-<button id="connectBtn" onclick="connect()">🔵 BLE接続</button>
-<br>
-<button id="openBtn" onclick="sendCommand('OPEN')">開く</button>
-<button id="closeBtn" onclick="sendCommand('CLOSE')">閉じる</button>
+    <div class="trash-scene" id="trashScene">
+      <div class="neon-ring" id="neonRing"></div>
+      <canvas id="physicsCanvas"></canvas>
 
-<div id="status">
-  <p>接続状態: <span id="conn">未接続</span></p>
-  <p>開閉回数: <span id="count">-</span> 回</p>
-</div>
+      <div class="trash-can" id="trashCan">
+        <div class="trash-lid" id="trashLid"></div>
+        <div class="trash-body" id="trashBody">
+          <div class="can-eyes"><div class="eye"></div><div class="eye"></div></div>
+          <div class="trash-fill" id="trashFill"></div>
+          <div class="trash-items-layer" id="trashItemsLayer"></div>
+        </div>
+      </div>
+    </div>
 
-<script>
-let characteristic = null;
-const SERVICE_UUID = '12345678-1234-1234-1234-1234567890ab';
-const CHAR_UUID    = 'abcd1234-5678-1234-5678-abcdef123456';
+    <div class="fill-bar-wrap">
+      <div class="fill-bar-header">
+        <span class="fill-bar-label">VOLUME CAPACITOR STREAMING</span>
+        <span class="fill-bar-pct" id="fillPct">0%</span>
+      </div>
+      <div class="fill-bar-track"><div class="fill-bar-inner" id="fillBarInner"></div></div>
+    </div>
 
-async function connect() {
-  try {
-    document.getElementById('connectBtn').disabled = true;
-    const device = await navigator.bluetooth.requestDevice({
-      filters: [{ name: 'SmartTrashBox' }],
-      optionalServices: [SERVICE_UUID]
-    });
-    const server  = await device.gatt.connect();
-    const service = await server.getPrimaryService(SERVICE_UUID);
-    characteristic = await service.getCharacteristic(CHAR_UUID);
+    <div class="buttons">
+      <div class="btn-row">
+        <button class="btn btn-connect" id="btnConnect" onclick="connectSystem()">
+          <span class="btn-label" style="display:flex; align-items:center;">
+            <span class="ble-status-dot" id="bleStatusDot"></span>
+            🔗 SYSTEM ONLINE
+          </span>
+          <span class="inline-counter">
+            <span class="check-mark-area" id="checkMark"></span>
+          </span>
+        </button>
+        <button class="btn btn-disconnect" id="btnDisconnect" onclick="disconnectSystem()" disabled>
+          <span class="disconnect-label">🔌 DISCONNECT</span>
+        </button>
+      </div>
 
-    document.getElementById('conn').textContent = '接続済み ✅';
-    document.getElementById('connectBtn').textContent = '接続済み';
+      <button class="btn btn-trash" id="btnToggle" onclick="toggleTrash()" disabled>
+        <span class="btn-label">
+          <span class="status-dot"></span>
+          ACCESS HATCH: <span class="status-text" id="statusText">CLOSED</span>
+        </span>
+        <span class="inline-counter">
+          <span class="inline-count-val" id="countNumber">0</span>
+          <span class="inline-count-unit">OPS</span>
+        </span>
+      </button>
 
-    // ✅ 接続完了後に確実に回数を取得
-    await readCount();
+      <div class="btn-row">
+        <button class="btn btn-add" id="btnAdd" onclick="addGarbage(event)" disabled>
+          <span class="btn-label">
+            🚀 INJECT MATTER
+          </span>
+          <span class="inline-counter">
+            <span class="inline-count-val" id="totalGarbageNumber">0</span>
+            <span class="inline-count-unit">QTY</span>
+          </span>
+        </button>
+        
+        <button class="btn btn-empty" onclick="emptyTrash()">
+          <span class="empty-label"><span class="empty-icon">🧹</span>PURGE ALL</span>
+        </button>
+      </div>
+    </div>
 
-    device.addEventListener('gattserverdisconnected', () => {
-      document.getElementById('conn').textContent = '切断 ❌';
-      document.getElementById('connectBtn').disabled = false;
-      document.getElementById('connectBtn').textContent = '🔵 BLE接続';
-      characteristic = null;
-    });
-  } catch (e) {
-    console.error(e);
-    alert('BLE接続に失敗しました: ' + e.message);
-    document.getElementById('connectBtn').disabled = false;
-  }
-}
+    <div class="log">
+      <div class="log-header">SYSTEM LOG MATRIX</div>
+      <div class="log-entries" id="logEntries">
+        <span class="log-empty">// CORE SIGNAL ONLINE //</span>
+      </div>
+    </div>
+  </div>
 
-async function sendCommand(cmd) {
-  if (!characteristic) {
-    alert('先にBLE接続してください');
-    return;
-  }
-  try {
-    const encoder = new TextEncoder();
-    await characteristic.writeValue(encoder.encode(cmd));
-    // ✅ 書き込み完了を待ってから回数を読む（500msに延長）
-    setTimeout(readCount, 500);
-  } catch (e) {
-    console.error('送信エラー:', e);
-  }
-}
+  <script>
+    // =============================================
+    // BLE設定
+    // =============================================
+    const SERVICE_UUID = '12345678-1234-1234-1234-1234567890ab';
+    const CHAR_UUID    = 'abcd1234-5678-1234-5678-abcdef123456';
+    let bleCharacteristic = null;
+    let bleDevice = null;
 
-async function readCount() {
-  if (!characteristic) return;
-  try {
-    const value = await characteristic.readValue();
-    const str = new TextDecoder().decode(value);
-    // ✅ NaN対策
-    const count = parseInt(str);
-    document.getElementById('count').textContent = isNaN(count) ? '?' : count;
-  } catch (e) {
-    console.error('回数読み取りエラー:', e);
-  }
-}
-</script>
+    // =============================================
+    // サウンドシンセプロセッサー
+    // =============================================
+    const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    function playSound(freq, type, duration, volume = 0.06) {
+      try {
+        const osc = audioCtx.createOscillator();
+        const gain = audioCtx.createGain();
+        osc.type = type; osc.frequency.setValueAtTime(freq, audioCtx.currentTime);
+        gain.gain.setValueAtTime(0, audioCtx.currentTime);
+        gain.gain.linearRampToValueAtTime(volume, audioCtx.currentTime + 0.01);
+        gain.gain.exponentialRampToValueAtTime(0.00001, audioCtx.currentTime + duration);
+        osc.connect(gain); gain.connect(audioCtx.destination);
+        osc.start(); osc.stop(audioCtx.currentTime + duration);
+      } catch(e) {}
+    }
+
+    // デジタルクロック初期化
+    (function(){
+      const now = new Date();
+      document.getElementById('date-display').textContent =
+        `SYS TIME // ${now.getFullYear()}.${String(now.getMonth()+1).padStart(2,'0')}.${String(now.getDate()).padStart(2,'0')}`;
+    })();
+
+    const MAX_ITEMS = 10;
+    let isOpen = false;
+    let totalGarbageCount = parseInt(localStorage.getItem('totalGarbageCount')) || 0;
+    let garbageCount = 0;
+
+    const EMOJIS = ['🍌','🥫','📰','🧃','🍕','🥡','📦','🍜','🥤','🍔','🧴','🍉','🧻','💎','🎮','🔋'];
+
+    document.getElementById('totalGarbageNumber').textContent = totalGarbageCount;
+
+    // =============================================
+    // 接続状態に応じてUI全体を切り替える
+    // =============================================
+    function setConnectedUI(connected) {
+      document.getElementById('btnConnect').disabled    =  connected;
+      document.getElementById('btnDisconnect').disabled = !connected;
+      document.getElementById('btnToggle').disabled     = !connected;
+      // 蓋が開いているときのみINJECT有効（接続中かつ開状態）
+      document.getElementById('btnAdd').disabled = !(connected && isOpen);
+
+      const dot = document.getElementById('bleStatusDot');
+      dot.classList.toggle('connected', connected);
+
+      document.getElementById('checkMark').textContent = connected ? '✅' : '';
+    }
+
+    // =============================================
+    // BLE接続
+    // =============================================
+    async function connectSystem() {
+      // 非対応ブラウザチェック
+      if (!navigator.bluetooth) {
+        addLog('WEB BLUETOOTH NOT SUPPORTED ON THIS BROWSER.', 'ble-error-action');
+        alert('このブラウザはWeb Bluetoothに対応していません。\nAndroid版Chromeを使用してください。');
+        return;
+      }
+      try {
+        document.getElementById('btnConnect').disabled = true;
+        addLog('SCANNING FOR SmartTrashBox...', 'connect-action');
+
+        bleDevice = await navigator.bluetooth.requestDevice({
+          filters: [{ name: 'SmartTrashBox' }],
+          optionalServices: [SERVICE_UUID]
+        });
+
+        const server  = await bleDevice.gatt.connect();
+        const service = await server.getPrimaryService(SERVICE_UUID);
+        bleCharacteristic = await service.getCharacteristic(CHAR_UUID);
+
+        // 切断イベント
+        bleDevice.addEventListener('gattserverdisconnected', () => {
+          bleCharacteristic = null;
+          bleDevice = null;
+          isOpen = false;
+          document.getElementById('trashLid').classList.remove('open');
+          document.getElementById('btnToggle').classList.remove('is-open-btn');
+          document.getElementById('trashCan').classList.remove('is-open');
+          document.getElementById('statusText').textContent = 'CLOSED';
+          setConnectedUI(false);
+          playSound(880, 'sawtooth', 0.05, 0.04);
+          setTimeout(() => playSound(440, 'sawtooth', 0.15, 0.04), 60);
+          addLog('SIGNAL LOST. DISCONNECTED FROM MATRIX.', 'disconnect-action');
+        });
+
+        // 接続成功
+        setConnectedUI(true);
+        playSound(523.25, 'sine', 0.05, 0.08);
+        setTimeout(() => playSound(659.25, 'sine', 0.05, 0.08), 50);
+        setTimeout(() => playSound(880, 'sine', 0.15, 0.08), 100);
+
+        const btn = document.getElementById('btnConnect');
+        btn.classList.add('rubber'); setTimeout(() => btn.classList.remove('rubber'), 500);
+
+        // 開閉回数をBLEから読み取り
+        await readCountFromBLE();
+        addLog('ONLINE SYNC ESTABLISHED. CORE INITIALIZED.', 'connect-action');
+
+      } catch (e) {
+        console.error(e);
+        addLog(`CONNECTION FAILED: ${e.message}`, 'ble-error-action');
+        document.getElementById('btnConnect').disabled = false;
+      }
+    }
+
+    // =============================================
+    // BLE切断
+    // =============================================
+    function disconnectSystem() {
+      if (bleDevice && bleDevice.gatt.connected) {
+        bleDevice.gatt.disconnect();
+        // gattserverdisconnectedイベントが発火してUI更新される
+      }
+    }
+
+    // =============================================
+    // BLEコマンド送信
+    // =============================================
+    async function sendBLECommand(cmd) {
+      if (!bleCharacteristic) return;
+      try {
+        const encoder = new TextEncoder();
+        await bleCharacteristic.writeValueWithResponse(encoder.encode(cmd));
+      } catch (e) {
+        console.error('BLE送信エラー:', e);
+        addLog(`SEND ERROR: ${e.message}`, 'ble-error-action');
+      }
+    }
+
+    // =============================================
+    // BLEから開閉回数を読み取り
+    // =============================================
+    async function readCountFromBLE() {
+      if (!bleCharacteristic) return;
+      try {
+        const value = await bleCharacteristic.readValue();
+        const str = new TextDecoder().decode(value);
+        const count = parseInt(str);
+        if (!isNaN(count)) {
+          document.getElementById('countNumber').textContent = count;
+        }
+      } catch (e) {
+        console.error('BLE回数読み取りエラー:', e);
+      }
+    }
+
+    // =============================================
+    // ハッチ開閉（BLEコマンド統合）
+    // =============================================
+    async function toggleTrash(){
+      isOpen = !isOpen;
+
+      // BLEコマンド送信
+      await sendBLECommand(isOpen ? 'OPEN' : 'CLOSE');
+
+      document.getElementById('btnToggle').classList.toggle('is-open-btn', isOpen);
+      document.getElementById('trashLid').classList.toggle('open', isOpen);
+      document.getElementById('statusText').textContent = isOpen ? 'OPENED' : 'CLOSED';
+      // 蓋が開いているときのみINJECT有効
+      document.getElementById('btnAdd').disabled = !isOpen;
+      
+      const canEl = document.getElementById('trashCan');
+      canEl.classList.toggle('is-open', isOpen);
+
+      if(isOpen) {
+        playSound(587.33, 'triangle', 0.05);
+        setTimeout(() => playSound(880, 'triangle', 0.08), 50);
+      } else {
+        playSound(880, 'triangle', 0.05); 
+        setTimeout(() => playSound(587.33, 'triangle', 0.08), 50);
+      }
+
+      const btn = document.getElementById('btnToggle');
+      btn.classList.add('rubber'); setTimeout(()=>btn.classList.remove('rubber'),500);
+
+      // OPENのとき500ms後にBLEから最新カウントを取得
+      if (isOpen) {
+        setTimeout(async () => {
+          await readCountFromBLE();
+          const cn = document.getElementById('countNumber');
+          cn.classList.add('bump');
+          setTimeout(()=>cn.classList.remove('bump'),200);
+        }, 500);
+      }
+
+      updateCanStateDisplay();
+      addLog(isOpen ? 'HATCH MECH OPENED.' : 'HATCH MECH SECURED.', isOpen?'open-action':'close-action');
+    }
+
+    // =============================================
+    // ゴミ注入（ローカルUI処理のみ）
+    // =============================================
+    function addGarbage(event){
+      garbageCount++;
+      totalGarbageCount++;
+      localStorage.setItem('totalGarbageCount', totalGarbageCount);
+
+      const btn = document.getElementById('btnAdd');
+      btn.classList.add('rubber'); setTimeout(()=>btn.classList.remove('rubber'),500);
+
+      const tgn = document.getElementById('totalGarbageNumber');
+      tgn.textContent = totalGarbageCount; tgn.classList.add('bump');
+      setTimeout(()=>tgn.classList.remove('bump'),200);
+
+      if(event) {
+        const rect = event.currentTarget.getBoundingClientRect();
+        const scRect = document.getElementById('trashScene').getBoundingClientRect();
+        const px = (rect.left + rect.width/2) - scRect.left;
+        const py = rect.top - scRect.top;
+        createExplosion(px, py, 8);
+      }
+
+      if(garbageCount <= MAX_ITEMS){
+        playSound(440, 'sine', 0.1, 0.15);
+        triggerCanShake();
+        updateFillBar();
+        spawnInsideCan();
+        createExplosion(canvas.width/2, canvas.height - 130, 4);
+        addLog(`MATTER STORED IN CELL [${garbageCount}/${MAX_ITEMS}]`,'add-action');
+      } else {
+        triggerScreenShake();
+        triggerCanShake();
+        updateFillBar();
+        playSound(600, 'square', 0.05, 0.1);
+        setTimeout(() => playSound(900, 'square', 0.05, 0.1), 40);
+        setTimeout(() => playSound(1200, 'square', 0.15, 0.1), 80);
+        const emitX = canvas.width / 2;
+        const emitY = canvas.height - 125;
+        createExplosion(emitX, emitY, 20);
+        const randomEmoji = EMOJIS[Math.floor(Math.random() * EMOJIS.length)];
+        spiltItems.push(new SpiltTrash(emitX, emitY, randomEmoji));
+        addLog('🚨 WARNING: CAPACITY OVERFLOW. MATTER SPILLED OUT!','spill-action');
+      }
+      updateCanStateDisplay();
+    }
+
+    // =============================================
+    // 2D物理シミュレーション
+    // =============================================
+    const canvas = document.getElementById('physicsCanvas');
+    const ctx = canvas.getContext('2d');
+    let particles = [];
+    let spiltItems = []; 
+
+    function resizeCanvas() {
+      const scene = document.getElementById('trashScene');
+      canvas.width = scene.clientWidth;
+      canvas.height = scene.clientHeight;
+    }
+    window.addEventListener('resize', resizeCanvas);
+    resizeCanvas();
+
+    class SpiltTrash {
+      constructor(x, y, emoji) {
+        this.x = x; this.y = y;
+        this.emoji = emoji;
+        this.radius = 14;
+        this.vx = (Math.random() - 0.5) * 12;
+        this.vy = -Math.random() * 10 - 5;
+        this.gravity = 0.4;
+        this.bounce = 0.5;
+        this.friction = 0.98;
+        this.angle = Math.random() * Math.PI * 2;
+        this.va = (Math.random() - 0.5) * 0.2;
+      }
+      update() {
+        this.vy += this.gravity;
+        this.vx *= this.friction;
+        this.x += this.vx;
+        this.y += this.vy;
+        this.angle += this.va;
+        if (this.y > canvas.height - this.radius - 8) {
+          this.y = canvas.height - this.radius - 8;
+          this.vy = -this.vy * this.bounce;
+          this.vx *= 0.8; 
+          this.va *= 0.6;
+        }
+        if (this.x < this.radius + 6) { this.x = this.radius + 6; this.vx = -this.vx * this.bounce; }
+        if (this.x > canvas.width - this.radius - 6) { this.x = canvas.width - this.radius - 6; this.vx = -this.vx * this.bounce; }
+      }
+      draw() {
+        ctx.save();
+        ctx.translate(this.x, this.y);
+        ctx.rotate(this.angle);
+        ctx.font = "24px 'M PLUS Rounded 1c'";
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(this.emoji, 0, 0);
+        ctx.restore();
+      }
+    }
+
+    class Particle {
+      constructor(x, y) {
+        this.x = x; this.y = y;
+        const speed = Math.random() * 4 + 2;
+        const angle = Math.random() * Math.PI * 2;
+        this.vx = Math.cos(angle) * speed;
+        this.vy = Math.sin(angle) * speed;
+        this.life = 1.0;
+        this.decay = Math.random() * 0.05 + 0.03;
+        this.color = `hsl(${Math.random() * 60 + 140}, 100%, 65%)`;
+        this.radius = Math.random() * 3 + 2;
+      }
+      update() { this.x += this.vx; this.y += this.vy; this.life -= this.decay; }
+      draw() {
+        ctx.save();
+        ctx.globalAlpha = this.life;
+        ctx.fillStyle = this.color;
+        ctx.shadowBlur = 6;
+        ctx.shadowColor = this.color;
+        ctx.beginPath();
+        ctx.arc(this.x, this.y, this.radius, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.restore();
+      }
+    }
+
+    function createExplosion(x, y, count = 12) {
+      for(let i=0; i<count; i++) particles.push(new Particle(x, y));
+    }
+
+    function loop() {
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      particles = particles.filter(p => p.life > 0);
+      particles.forEach(p => { p.update(); p.draw(); });
+      spiltItems.forEach(item => { item.update(); item.draw(); });
+      for(let i=0; i<spiltItems.length; i++) {
+        for(let j=i+1; j<spiltItems.length; j++) {
+          let a = spiltItems[i]; let b = spiltItems[j];
+          let dx = b.x - a.x; let dy = b.y - a.y;
+          let dist = Math.sqrt(dx*dx + dy*dy);
+          if(dist < 26) {
+            let overlap = 26 - dist;
+            let nx = dx / dist; let ny = dy / dist;
+            a.x -= nx * overlap * 0.5; a.y -= ny * overlap * 0.5;
+            b.x += nx * overlap * 0.5; b.y += ny * overlap * 0.5;
+            let kx = a.vx - b.vx; a.vx -= kx * 0.5; b.vx += kx * 0.5;
+          }
+        }
+      }
+      requestAnimationFrame(loop);
+    }
+    requestAnimationFrame(loop);
+
+    function triggerScreenShake() {
+      document.body.classList.add('shake-screen');
+      setTimeout(() => document.body.classList.remove('shake-screen'), 400);
+    }
+
+    function triggerCanShake() {
+      const can = document.getElementById('trashCan');
+      can.classList.add('shake-can');
+      setTimeout(() => can.classList.remove('shake-can'), 300);
+    }
+
+    function spawnInsideCan(){
+      const layer = document.getElementById('trashItemsLayer');
+      const emoji = EMOJIS[Math.floor(Math.random() * EMOJIS.length)];
+      const el = document.createElement('span');
+      el.className = 'inner-emoji';
+      const fp = (garbageCount / MAX_ITEMS) * 100;
+      el.style.cssText = `bottom:${Math.min(fp*0.85, 82)}%; left:${15 + Math.random()*50}%; transform: rotate(${(Math.random()-0.5)*40}deg);`;
+      el.textContent = emoji;
+      layer.appendChild(el);
+    }
+
+    function updateFillBar(){
+      const pct = Math.min(Math.round((garbageCount / MAX_ITEMS) * 100), 100);
+      document.getElementById('trashFill').style.height = `${pct}%`;
+      const bar = document.getElementById('fillBarInner');
+      const lbl = document.getElementById('fillPct');
+      bar.style.width = `${pct}%`;
+      lbl.textContent = `${pct}%`;
+      const warn = pct >= 60, danger = pct >= 90;
+      bar.className = 'fill-bar-inner' + (danger ? ' danger' : (warn ? ' warn' : ''));
+      lbl.className = 'fill-bar-pct' + (danger ? ' danger' : (warn ? ' warn' : ''));
+      let statusColor = '#00f0b5';
+      if(danger) statusColor = '#ff5e97';
+      else if(warn) statusColor = '#ffd166';
+      document.documentElement.style.setProperty('--system-status', statusColor);
+    }
+
+    function updateCanStateDisplay() {
+      const canEl = document.getElementById('trashCan');
+      canEl.classList.remove('is-warn', 'is-danger');
+      const pct = (garbageCount / MAX_ITEMS) * 100;
+      if (garbageCount > MAX_ITEMS) canEl.classList.add('is-danger');
+      else if (pct >= 70) canEl.classList.add('is-warn');
+    }
+
+    function emptyTrash(){
+      if(garbageCount === 0 && spiltItems.length === 0) return;
+      playSound(400, 'sine', 0.05, 0.08);
+      setTimeout(() => playSound(800, 'sine', 0.05, 0.08), 50);
+      setTimeout(() => playSound(1600, 'sine', 0.2, 0.08), 100);
+      createExplosion(canvas.width/2, canvas.height/2, 30);
+      garbageCount = 0;
+      updateFillBar();
+      updateCanStateDisplay();
+      document.getElementById('trashItemsLayer').innerHTML = '';
+      spiltItems = [];
+      addLog('✨ SYSTEM MEMORY PURGED. ALL CELLS CLEARED.','empty-action');
+    }
+
+    function addLog(msg, cls){
+      const entries = document.getElementById('logEntries');
+      const empty = entries.querySelector('.log-empty'); if(empty) empty.remove();
+      const now = new Date();
+      const time = `${String(now.getHours()).padStart(2,'0')}:${String(now.getMinutes()).padStart(2,'0')}:${String(now.getSeconds()).padStart(2,'0')}`;
+      const e = document.createElement('div'); e.className = 'log-entry';
+      e.innerHTML = `<span class="log-time">[${time}]</span><span class="${cls}">// ${msg}</span>`;
+      entries.insertBefore(e, entries.firstChild);
+      while(entries.children.length > 15) entries.removeChild(entries.lastChild);
+    }
+
+    // 初期UI状態（未接続）
+    setConnectedUI(false);
+  </script>
 </body>
 </html>
