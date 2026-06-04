@@ -7,84 +7,86 @@
     body { font-family: sans-serif; text-align: center; margin-top: 50px; }
     button { font-size: 1.2em; margin: 10px; padding: 10px 20px; }
     #status { margin-top: 20px; font-size: 1.1em; }
+    #connectBtn { background: #4CAF50; color: white; border: none; border-radius: 8px; cursor: pointer; }
+    #connectBtn:disabled { background: #aaa; }
   </style>
 </head>
 <body>
 <h1>スマートゴミ箱</h1>
 
-<button id="openBtn">開く</button>
-<button id="closeBtn">閉じる</button>
+<!-- ✅ 明示的な接続ボタンを追加 -->
+<button id="connectBtn" onclick="connect()">🔵 BLE接続</button>
+<br>
+<button id="openBtn" onclick="sendCommand('OPEN')">開く</button>
+<button id="closeBtn" onclick="sendCommand('CLOSE')">閉じる</button>
 
 <div id="status">
   <p>接続状態: <span id="conn">未接続</span></p>
-  <p>開閉回数: <span id="count">0</span> 回</p>
+  <p>開閉回数: <span id="count">-</span> 回</p>
 </div>
 
 <script>
-let device;
-let characteristic;
-
+let characteristic = null;
 const SERVICE_UUID = '12345678-1234-1234-1234-1234567890ab';
-const CHAR_UUID = 'abcd1234-5678-1234-5678-abcdef123456';
+const CHAR_UUID    = 'abcd1234-5678-1234-5678-abcdef123456';
 
-// 接続関数
 async function connect() {
   try {
-    device = await navigator.bluetooth.requestDevice({
+    document.getElementById('connectBtn').disabled = true;
+    const device = await navigator.bluetooth.requestDevice({
       filters: [{ name: 'SmartTrashBox' }],
       optionalServices: [SERVICE_UUID]
     });
-
-    const server = await device.gatt.connect();
+    const server  = await device.gatt.connect();
     const service = await server.getPrimaryService(SERVICE_UUID);
     characteristic = await service.getCharacteristic(CHAR_UUID);
 
-    document.getElementById('conn').textContent = '接続済み';
+    document.getElementById('conn').textContent = '接続済み ✅';
+    document.getElementById('connectBtn').textContent = '接続済み';
 
-    // 初回読み込み：回数を取得して表示
-    readCount();
+    // ✅ 接続完了後に確実に回数を取得
+    await readCount();
 
     device.addEventListener('gattserverdisconnected', () => {
-      document.getElementById('conn').textContent = '切断';
+      document.getElementById('conn').textContent = '切断 ❌';
+      document.getElementById('connectBtn').disabled = false;
+      document.getElementById('connectBtn').textContent = '🔵 BLE接続';
       characteristic = null;
     });
-
-    console.log("接続成功");
   } catch (e) {
     console.error(e);
-    alert('BLE接続に失敗しました');
+    alert('BLE接続に失敗しました: ' + e.message);
+    document.getElementById('connectBtn').disabled = false;
   }
 }
 
-// コマンド送信
 async function sendCommand(cmd) {
   if (!characteristic) {
-    await connect();
+    alert('先にBLE接続してください');
+    return;
   }
-  const encoder = new TextEncoder();
-  await characteristic.writeValue(encoder.encode(cmd));
-
-  // コマンド送信後に開閉回数を取得
-  setTimeout(readCount, 200); // 少し待ってから取得
+  try {
+    const encoder = new TextEncoder();
+    await characteristic.writeValue(encoder.encode(cmd));
+    // ✅ 書き込み完了を待ってから回数を読む（500msに延長）
+    setTimeout(readCount, 500);
+  } catch (e) {
+    console.error('送信エラー:', e);
+  }
 }
 
-// 開閉回数読み取り
 async function readCount() {
   if (!characteristic) return;
   try {
     const value = await characteristic.readValue();
-    const decoder = new TextDecoder();
-    const str = decoder.decode(value);
-    const count = parseInt(str) || 0;
-    document.getElementById('count').textContent = count;
+    const str = new TextDecoder().decode(value);
+    // ✅ NaN対策
+    const count = parseInt(str);
+    document.getElementById('count').textContent = isNaN(count) ? '?' : count;
   } catch (e) {
-    console.error("回数読み取りエラー:", e);
+    console.error('回数読み取りエラー:', e);
   }
 }
-
-// ボタンイベント
-document.getElementById('openBtn').onclick = () => sendCommand('OPEN');
-document.getElementById('closeBtn').onclick = () => sendCommand('CLOSE');
 </script>
 </body>
 </html>
