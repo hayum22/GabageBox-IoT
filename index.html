@@ -359,6 +359,7 @@
     const CHAR_UUID    = 'abcd1234-5678-1234-5678-abcdef123456';
     let bleCharacteristic = null;
     let bleDevice = null;
+    let pollTimer = null;  // [FIX4] ポーリングタイマー
 
     // =============================================
     // サウンドシンセプロセッサー
@@ -434,6 +435,9 @@
 
         // 切断イベント
         bleDevice.addEventListener('gattserverdisconnected', () => {
+          // [FIX4] ポーリング停止
+          if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
+
           bleCharacteristic = null;
           bleDevice = null;
           isOpen = false;
@@ -441,10 +445,12 @@
           document.getElementById('btnToggle').classList.remove('is-open-btn');
           document.getElementById('trashCan').classList.remove('is-open');
           document.getElementById('statusText').textContent = 'CLOSED';
+          // [FIX2] 切断時に蓋が開いていた場合の警告
           setConnectedUI(false);
           playSound(880, 'sawtooth', 0.05, 0.04);
           setTimeout(() => playSound(440, 'sawtooth', 0.15, 0.04), 60);
           addLog('SIGNAL LOST. DISCONNECTED FROM MATRIX.', 'disconnect-action');
+          if (isOpen) addLog('⚠ HATCH MAY STILL BE OPEN ON DEVICE.', 'ble-error-action');
         });
 
         // 接続成功
@@ -458,6 +464,8 @@
 
         // 開閉回数をBLEから読み取り
         await readCountFromBLE();
+        // [FIX4] 5秒ごとにカウントをポーリング（センサー自動検知分も反映）
+        pollTimer = setInterval(readCountFromBLE, 5000);
         addLog('ONLINE SYNC ESTABLISHED. CORE INITIALIZED.', 'connect-action');
 
       } catch (e) {
@@ -480,14 +488,17 @@
     // =============================================
     // BLEコマンド送信
     // =============================================
+    // [FIX1] 成功/失敗をboolで返す
     async function sendBLECommand(cmd) {
-      if (!bleCharacteristic) return;
+      if (!bleCharacteristic) return false;
       try {
         const encoder = new TextEncoder();
         await bleCharacteristic.writeValueWithResponse(encoder.encode(cmd));
+        return true;
       } catch (e) {
         console.error('BLE送信エラー:', e);
         addLog(`SEND ERROR: ${e.message}`, 'ble-error-action');
+        return false;
       }
     }
 
@@ -512,17 +523,21 @@
     // ハッチ開閉（BLEコマンド統合）
     // =============================================
     async function toggleTrash(){
-      isOpen = !isOpen;
+      const next = !isOpen;
 
-      // BLEコマンド送信
-      await sendBLECommand(isOpen ? 'OPEN' : 'CLOSE');
+      // [FIX1] BLE送信失敗時はUI更新しない
+      const ok = await sendBLECommand(next ? 'OPEN' : 'CLOSE');
+      if (!ok) {
+        addLog('COMMAND FAILED. HATCH STATE UNCHANGED.', 'ble-error-action');
+        return;
+      }
+
+      isOpen = next;
 
       document.getElementById('btnToggle').classList.toggle('is-open-btn', isOpen);
       document.getElementById('trashLid').classList.toggle('open', isOpen);
       document.getElementById('statusText').textContent = isOpen ? 'OPENED' : 'CLOSED';
-      // 蓋が開いているときのみINJECT有効
-      document.getElementById('btnAdd').disabled = !isOpen;
-      
+
       const canEl = document.getElementById('trashCan');
       canEl.classList.toggle('is-open', isOpen);
 
@@ -536,6 +551,9 @@
 
       const btn = document.getElementById('btnToggle');
       btn.classList.add('rubber'); setTimeout(()=>btn.classList.remove('rubber'),500);
+
+      // [FIX3] btnAddの制御をsetConnectedUIに一元化
+      setConnectedUI(true);
 
       // OPENのとき500ms後にBLEから最新カウントを取得
       if (isOpen) {
